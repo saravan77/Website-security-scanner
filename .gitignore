@@ -1,0 +1,18 @@
+/target/
+*.class
+
+# IDEs and editors
+/.idea/
+/*.iml
+/.vscode/
+/.settings/
+/.classpath
+/.project
+/.factorypath
+
+# Log files
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
