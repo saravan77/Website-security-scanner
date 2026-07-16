@@ -1,4 +1,4 @@
-# Website Security Analyzer
+# Website Security Scanner
 
 A production-ready Spring Boot 3.x boilerplate project with a clean, layered architecture.
 
