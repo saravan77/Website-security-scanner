@@ -88,6 +88,11 @@ document.addEventListener("DOMContentLoaded", () => {
     let currentSortField = "date"; // "date" or "score"
     let sortAscending = false;
 
+    // Chart instances
+    let scoreDistChartInstance = null;
+    let vulnChartInstance = null;
+    let trendChartInstance = null;
+
     // --- 0. TOAST NOTIFICATIONS ---
     const appToastEl = document.getElementById("appToast");
     const toastIcon = document.getElementById("toastIcon");
@@ -128,6 +133,32 @@ document.addEventListener("DOMContentLoaded", () => {
         document.documentElement.setAttribute("data-theme", newTheme);
         localStorage.setItem("theme", newTheme);
         updateThemeIcon(newTheme);
+        
+        // Update Chart.js colors on theme switch
+        const isDark = newTheme === "dark";
+        const textColor = isDark ? "#9ca3af" : "#64748b";
+        const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
+        
+        if (scoreDistChartInstance) {
+            scoreDistChartInstance.options.plugins.legend.labels.color = textColor;
+            scoreDistChartInstance.data.datasets[0].borderColor = isDark ? "#111827" : "#ffffff";
+            scoreDistChartInstance.update();
+        }
+        if (vulnChartInstance) {
+            vulnChartInstance.options.scales.x.ticks.color = textColor;
+            vulnChartInstance.options.scales.x.grid.color = gridColor;
+            vulnChartInstance.options.scales.y.ticks.color = textColor;
+            vulnChartInstance.options.scales.y.grid.color = gridColor;
+            vulnChartInstance.update();
+        }
+        if (trendChartInstance) {
+            trendChartInstance.options.scales.x.ticks.color = textColor;
+            trendChartInstance.options.scales.x.grid.color = gridColor;
+            trendChartInstance.options.scales.y.ticks.color = textColor;
+            trendChartInstance.options.scales.y.grid.color = gridColor;
+            trendChartInstance.data.datasets[0].pointBorderColor = isDark ? "#111827" : "#ffffff";
+            trendChartInstance.update();
+        }
     }
     
     function updateThemeIcon(theme) {
@@ -209,11 +240,51 @@ document.addEventListener("DOMContentLoaded", () => {
     window.addEventListener("hashchange", handleRouting);
     handleRouting(); // First check on startup
 
+    // --- Terminal Log Helper ---
+    function logTerminal(message, type = "info") {
+        const termBody = document.getElementById("terminalLogBody");
+        if (!termBody) return;
+        
+        const timestamp = new Date().toLocaleTimeString();
+        let color = "#a1a1aa"; // default zinc-400
+        let prefix = "INFO";
+        
+        if (type === "success") {
+            color = "#10b981"; // emerald-500
+            prefix = "SUCCESS";
+        } else if (type === "error") {
+            color = "#f43f5e"; // rose-500
+            prefix = "ERROR";
+        } else if (type === "warning") {
+            color = "#f59e0b"; // amber-500
+            prefix = "WARN";
+        } else if (type === "process") {
+            color = "#818cf8"; // indigo-400
+            prefix = "RUN";
+        }
+        
+        const logLine = document.createElement("div");
+        logLine.style.color = color;
+        logLine.style.marginBottom = "4px";
+        logLine.style.lineHeight = "1.4";
+        logLine.innerHTML = `[${timestamp}] [${prefix}] ${message}`;
+        
+        termBody.appendChild(logLine);
+        
+        // Auto scroll to bottom
+        const parent = termBody.parentElement;
+        parent.scrollTop = parent.scrollHeight;
+    }
+
     // --- 3. SUBMIT SCAN ACTION ---
     scanForm.addEventListener("submit", async (e) => {
         e.preventDefault();
         const targetUrl = targetUrlInput.value.trim();
         if (!targetUrl) return;
+
+        // Clear previous terminal console contents
+        const termBody = document.getElementById("terminalLogBody");
+        if (termBody) termBody.innerHTML = "";
 
         // Display Loading UI
         Object.keys(viewPanels).forEach(key => {
@@ -221,8 +292,13 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         loadingOverlay.classList.remove("d-none");
 
+        logTerminal("Initializing asynchronous Web Shield security scan task...", "info");
+        logTerminal(`Target destination: ${targetUrl}`, "info");
+        logTerminal("Resolving target IP address and checking HTTP/HTTPS connection availability...", "process");
+
         // Cycle loading text description
         const phases = [
+            "Initializing asynchronous security scan task...",
             "Resolving hostname and checking connection availability...",
             "Inspecting SSL certificate protocols and validity ranges...",
             "Scanning target response headers and cookie flags...",
@@ -253,19 +329,66 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (!response.ok) {
                 const errData = await response.json().catch(() => ({}));
-                const msg = errData.message || "Server error during scanning processing.";
+                const msg = errData.message || "Server error starting scan.";
                 throw new Error(msg);
             }
 
             const scanResult = await response.json();
+            const scanId = scanResult.id;
             
-            showToast("Scan Success", `Audit completed successfully for ${targetUrl}`, "success");
-            
-            // Redirect to report view for the completed scan ID
-            activeReportId = scanResult.id;
-            window.location.hash = `#report?id=${scanResult.id}`;
+            logTerminal(`Security scan task accepted by background engine. Task ID: ${scanId}`, "success");
+            logTerminal("Inspecting target SSL certificate protocols, cipher suites, and issuer...", "process");
+
+            let polledCount = 0;
+            // Start Polling for Async Scan Status
+            await new Promise((resolve, reject) => {
+                const pollInterval = setInterval(async () => {
+                    polledCount++;
+                    try {
+                        const statusResponse = await fetch(`/api/scans/${scanId}`);
+                        if (!statusResponse.ok) {
+                            clearInterval(pollInterval);
+                            reject(new Error("Failed to fetch scan progress."));
+                            return;
+                        }
+                        
+                        const currentScan = await statusResponse.json();
+                        
+                        // Print mock-live steps to console
+                        if (polledCount === 1) {
+                            logTerminal("SSL inspection successful. Querying security headers (CSP, HSTS, X-Frame-Options)...", "success");
+                        } else if (polledCount === 2) {
+                            logTerminal("Analyzing response cookie attributes (Secure, HttpOnly, SameSite, Expiration)...", "process");
+                        } else if (polledCount === 3) {
+                            logTerminal("Applying weighted scoring algorithm to security posture metrics...", "process");
+                        }
+
+                        if (currentScan.status === "COMPLETED") {
+                            clearInterval(pollInterval);
+                            logTerminal("Scoring completed. Finalizing database records and report summaries...", "success");
+                            logTerminal(`Scan successfully completed! Score: ${currentScan.score}/100`, "success");
+                            
+                            setTimeout(() => {
+                                showToast("Scan Success", `Audit completed successfully for ${targetUrl}`, "success");
+                                activeReportId = scanId;
+                                window.location.hash = `#report?id=${scanId}`;
+                                resolve();
+                            }, 500);
+                        } else if (currentScan.status === "FAILED") {
+                            clearInterval(pollInterval);
+                            logTerminal("Scan execution aborted due to server verification failure.", "error");
+                            reject(new Error("Scanner failed to analyze the target URL. Please verify host accessibility."));
+                        }
+                    } catch (pollErr) {
+                        clearInterval(pollInterval);
+                        logTerminal(`Fatal polling error: ${pollErr.message}`, "error");
+                        reject(pollErr);
+                    }
+                }, 1200);
+            });
 
         } catch (err) {
+            logTerminal(`Scan execution failed: ${err.message}`, "error");
             console.error(err);
             showToast("Scan Failed", err.message, "danger");
             window.location.hash = "#home";
@@ -316,10 +439,22 @@ document.addEventListener("DOMContentLoaded", () => {
         let insecureCookies = 0;
         let expiredSsl = 0;
 
+        let secureCount = 0;
+        let warningCount = 0;
+        let dangerCount = 0;
+
         completedScans.forEach(scan => {
             totalScore += scan.score;
             totalTime += (scan.responseTimeMs || 0);
-            if (scan.score < 55) highRiskCount++;
+            
+            if (scan.score >= 80) {
+                secureCount++;
+            } else if (scan.score >= 55) {
+                warningCount++;
+            } else {
+                dangerCount++;
+                highRiskCount++;
+            }
 
             // Evaluate security headers
             if (scan.securityHeaders) {
@@ -356,6 +491,10 @@ document.addEventListener("DOMContentLoaded", () => {
             Math.round((expiredSsl / total) * 100)
         );
 
+        // Render charts dynamically
+        renderDashboardCharts(secureCount, warningCount, dangerCount, missingCsp, missingHsts, insecureCookies, expiredSsl, total);
+        renderTrendChart(completedScans);
+
         // Render High Risk list (Top 5 lowest scores)
         const sortedRisks = [...completedScans]
             .sort((a, b) => a.score - b.score)
@@ -376,6 +515,184 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="badge ${badgeClass} badge-status">${scan.score} / 100</span>
             `;
             dashRiskList.appendChild(item);
+        });
+    }
+
+    function renderDashboardCharts(secure, warning, danger, csp, hsts, cookies, ssl, total) {
+        const scoreCanvas = document.getElementById("scoreDistributionChart");
+        const vulnCanvas = document.getElementById("vulnerabilitiesChart");
+        
+        if (!scoreCanvas || !vulnCanvas) return;
+
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const textColor = isDark ? "#9ca3af" : "#64748b";
+        const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
+
+        // 1. Score Distribution Doughnut Chart
+        if (scoreDistChartInstance) {
+            scoreDistChartInstance.destroy();
+        }
+        
+        const ctxScore = scoreCanvas.getContext("2d");
+        scoreDistChartInstance = new Chart(ctxScore, {
+            type: "doughnut",
+            data: {
+                labels: ["Secure (80-100)", "Warning (55-79)", "High Risk (0-54)"],
+                datasets: [{
+                    data: [secure, warning, danger],
+                    backgroundColor: ["#10b981", "#f59e0b", "#f43f5e"],
+                    borderWidth: isDark ? 2 : 1,
+                    borderColor: isDark ? "#111827" : "#ffffff"
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: "bottom",
+                        labels: {
+                            color: textColor,
+                            font: { family: "Plus Jakarta Sans", size: 11 }
+                        }
+                    }
+                }
+            }
+        });
+
+        // 2. Common Vulnerabilities Bar Chart
+        if (vulnChartInstance) {
+            vulnChartInstance.destroy();
+        }
+
+        const ctxVuln = vulnCanvas.getContext("2d");
+        vulnChartInstance = new Chart(ctxVuln, {
+            type: "bar",
+            data: {
+                labels: ["Missing CSP", "Missing HSTS", "Insecure Cookies", "SSL Issues"],
+                datasets: [{
+                    label: "Failed Checks",
+                    data: [csp, hsts, cookies, ssl],
+                    backgroundColor: ["#818cf8", "#f43f5e", "#ec4899", "#f59e0b"],
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor,
+                            font: { family: "Plus Jakarta Sans", size: 11 }
+                        }
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor,
+                            font: { family: "Plus Jakarta Sans", size: 11 },
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function renderTrendChart(completedScans) {
+        const trendCanvas = document.getElementById("scoreHistoryTrendChart");
+        if (!trendCanvas) return;
+
+        const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+        const textColor = isDark ? "#9ca3af" : "#64748b";
+        const gridColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.08)";
+
+        if (trendChartInstance) {
+            trendChartInstance.destroy();
+        }
+
+        // Sort scans chronologically by creation date
+        const sortedScans = [...completedScans].sort((a, b) => new Date(a.createdAt || a.completedAt) - new Date(b.createdAt || b.completedAt));
+        
+        // Take last 15 scans to avoid overcrowding the line chart
+        const recentScans = sortedScans.slice(-15);
+
+        const ctxTrend = trendCanvas.getContext("2d");
+        trendChartInstance = new Chart(ctxTrend, {
+            type: "line",
+            data: {
+                labels: recentScans.map(scan => formatDateTime(scan.createdAt || scan.completedAt)),
+                datasets: [{
+                    label: "Website Security Score",
+                    data: recentScans.map(scan => scan.score),
+                    borderColor: "#6366f1",
+                    backgroundColor: "rgba(99, 102, 241, 0.1)",
+                    borderWidth: 2,
+                    tension: 0.3,
+                    fill: true,
+                    pointBackgroundColor: "#818cf8",
+                    pointBorderColor: isDark ? "#111827" : "#ffffff",
+                    pointRadius: 4,
+                    pointHoverRadius: 6
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                const idx = context[0].dataIndex;
+                                return `URL: ${recentScans[idx].targetUrl}`;
+                            },
+                            label: function(context) {
+                                return `Score: ${context.parsed.y}/100`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor,
+                            font: { family: "Plus Jakarta Sans", size: 10 },
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    },
+                    y: {
+                        min: 0,
+                        max: 100,
+                        grid: {
+                            color: gridColor
+                        },
+                        ticks: {
+                            color: textColor,
+                            font: { family: "Plus Jakarta Sans", size: 11 },
+                            stepSize: 20
+                        }
+                    }
+                }
+            }
         });
     }
 
@@ -576,7 +893,17 @@ document.addEventListener("DOMContentLoaded", () => {
     // Export PDF
     exportPdfBtn.addEventListener("click", () => {
         if (currentReportScan && currentReportScan.id) {
-            window.location.href = `/api/scans/${currentReportScan.id}/export/pdf`;
+            const exRecs = document.getElementById("pdfExcludeRecs").checked;
+            const exSsl = document.getElementById("pdfExcludeSsl").checked;
+            const exHeaders = document.getElementById("pdfExcludeHeaders").checked;
+            const exCookies = document.getElementById("pdfExcludeCookies").checked;
+            
+            const url = `/api/scans/${currentReportScan.id}/export/pdf` +
+                `?excludeRecommendations=${exRecs}` +
+                `&excludeSsl=${exSsl}` +
+                `&excludeHeaders=${exHeaders}` +
+                `&excludeCookies=${exCookies}`;
+            window.location.href = url;
         }
     });
 
@@ -629,10 +956,13 @@ document.addEventListener("DOMContentLoaded", () => {
         // Gauge colors based on score
         if (scan.score >= 80) {
             reportScoreRing.style.stroke = "var(--success)";
+            reportScore.style.color = "var(--success)";
         } else if (scan.score >= 55) {
             reportScoreRing.style.stroke = "var(--warning)";
+            reportScore.style.color = "var(--warning)";
         } else {
             reportScoreRing.style.stroke = "var(--danger)";
+            reportScore.style.color = "var(--danger)";
         }
 
         // Overview boxes

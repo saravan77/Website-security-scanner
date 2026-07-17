@@ -61,10 +61,10 @@ public class ScanHistoryServiceImpl implements ScanHistoryService {
                 .build();
         ScanHistory savedScan = scanHistoryRepository.save(scan);
         
-        // 2. Run the scan engine (updates the scan history details and saves to DB)
-        ScanHistory completedScan = websiteScannerService.runScan(savedScan);
+        // 2. Run the scan engine asynchronously (updates the scan history details and saves to DB in background)
+        websiteScannerService.runScan(savedScan);
         
-        return convertToDto(completedScan);
+        return convertToDto(savedScan);
     }
 
     @Override

@@ -18,6 +18,11 @@ public class PdfReportServiceImpl implements PdfReportService {
 
     @Override
     public void generateScanReport(ScanHistory scan, OutputStream os) {
+        generateScanReportCustom(scan, os, false, false, false, false);
+    }
+
+    @Override
+    public void generateScanReportCustom(ScanHistory scan, OutputStream os, boolean excludeRecommendations, boolean excludeSsl, boolean excludeHeaders, boolean excludeCookies) {
         Document document = new Document(PageSize.A4, 36, 36, 54, 36);
         try {
             PdfWriter.getInstance(document, os);
@@ -92,119 +97,133 @@ public class PdfReportServiceImpl implements PdfReportService {
             scoreTable.addCell(scoreCell);
             document.add(scoreTable);
 
-            // Security Recommendations & Failed Checks Section
-            Paragraph secHeaderRec = new Paragraph("2. Action Items & Security Recommendations", sectionHeaderFont);
-            secHeaderRec.setSpacingAfter(10);
-            document.add(secHeaderRec);
+            int sectionNum = 2;
 
-            if (scan.getRecommendations() == null || scan.getRecommendations().isEmpty()) {
-                Paragraph noRecs = new Paragraph("No security vulnerabilities were detected on this target. Excellent!", normalFont);
-                noRecs.setSpacingAfter(20);
-                document.add(noRecs);
-            } else {
-                for (ScanRecommendation rec : scan.getRecommendations()) {
-                    Paragraph bullet = new Paragraph();
-                    bullet.add(new Chunk("[" + rec.getCategory() + "]  " + rec.getCheckName() + ": ", boldFont));
-                    bullet.add(new Chunk(rec.getRecommendation(), normalFont));
-                    bullet.setSpacingAfter(8);
-                    bullet.setIndentationLeft(15);
-                    document.add(bullet);
+            // Security Recommendations & Failed Checks Section
+            if (!excludeRecommendations) {
+                Paragraph secHeaderRec = new Paragraph(sectionNum + ". Action Items & Security Recommendations", sectionHeaderFont);
+                secHeaderRec.setSpacingAfter(10);
+                document.add(secHeaderRec);
+                sectionNum++;
+
+                if (scan.getRecommendations() == null || scan.getRecommendations().isEmpty()) {
+                    Paragraph noRecs = new Paragraph("No security vulnerabilities were detected on this target. Excellent!", normalFont);
+                    noRecs.setSpacingAfter(20);
+                    document.add(noRecs);
+                } else {
+                    for (ScanRecommendation rec : scan.getRecommendations()) {
+                        Paragraph bullet = new Paragraph();
+                        bullet.add(new Chunk("[" + rec.getCategory() + "]  " + rec.getCheckName() + ": ", boldFont));
+                        bullet.add(new Chunk(rec.getRecommendation(), normalFont));
+                        bullet.setSpacingAfter(8);
+                        bullet.setIndentationLeft(15);
+                        document.add(bullet);
+                    }
+                    Paragraph spacing = new Paragraph(" ");
+                    spacing.setSpacingAfter(10);
+                    document.add(spacing);
                 }
-                Paragraph spacing = new Paragraph(" ");
-                spacing.setSpacingAfter(10);
-                document.add(spacing);
             }
 
             // SSL certificate details Section
-            Paragraph secHeaderSsl = new Paragraph("3. SSL/TLS Certificate Specification", sectionHeaderFont);
-            secHeaderSsl.setSpacingAfter(10);
-            document.add(secHeaderSsl);
+            if (!excludeSsl) {
+                Paragraph secHeaderSsl = new Paragraph(sectionNum + ". SSL/TLS Certificate Specification", sectionHeaderFont);
+                secHeaderSsl.setSpacingAfter(10);
+                document.add(secHeaderSsl);
+                sectionNum++;
 
-            SSLInfo ssl = scan.getSslInfo();
-            if (ssl != null && ssl.isSslEnabled()) {
-                PdfPTable sslTable = new PdfPTable(2);
-                sslTable.setWidthPercentage(100);
-                sslTable.setSpacingAfter(20);
+                SSLInfo ssl = scan.getSslInfo();
+                if (ssl != null && ssl.isSslEnabled()) {
+                    PdfPTable sslTable = new PdfPTable(2);
+                    sslTable.setWidthPercentage(100);
+                    sslTable.setSpacingAfter(20);
 
-                addTableCell(sslTable, "SSL Enabled", boldFont);
-                addTableCell(sslTable, "Yes" + (ssl.isExpired() ? " (EXPIRED)" : " (ACTIVE)"), normalFont);
+                    addTableCell(sslTable, "SSL Enabled", boldFont);
+                    addTableCell(sslTable, "Yes" + (ssl.isExpired() ? " (EXPIRED)" : " (ACTIVE)"), normalFont);
 
-                addTableCell(sslTable, "Protocol Handshake", boldFont);
-                addTableCell(sslTable, ssl.getProtocol() != null ? ssl.getProtocol() : "N/A", normalFont);
+                    addTableCell(sslTable, "Protocol Handshake", boldFont);
+                    addTableCell(sslTable, ssl.getProtocol() != null ? ssl.getProtocol() : "N/A", normalFont);
 
-                addTableCell(sslTable, "Cipher Suite", boldFont);
-                addTableCell(sslTable, ssl.getCipherSuite() != null ? ssl.getCipherSuite() : "N/A", normalFont);
+                    addTableCell(sslTable, "Cipher Suite", boldFont);
+                    addTableCell(sslTable, ssl.getCipherSuite() != null ? ssl.getCipherSuite() : "N/A", normalFont);
 
-                addTableCell(sslTable, "Certificate Authority", boldFont);
-                addTableCell(sslTable, ssl.getIssuer() != null ? ssl.getIssuer() : "N/A", normalFont);
+                    addTableCell(sslTable, "Certificate Authority", boldFont);
+                    addTableCell(sslTable, ssl.getIssuer() != null ? ssl.getIssuer() : "N/A", normalFont);
 
-                addTableCell(sslTable, "Valid From Scope", boldFont);
-                addTableCell(sslTable, ssl.getValidFrom() != null ? ssl.getValidFrom().format(formatter) : "N/A", normalFont);
+                    addTableCell(sslTable, "Valid From Scope", boldFont);
+                    addTableCell(sslTable, ssl.getValidFrom() != null ? ssl.getValidFrom().format(formatter) : "N/A", normalFont);
 
-                addTableCell(sslTable, "Valid Until Scope", boldFont);
-                addTableCell(sslTable, ssl.getValidTo() != null ? ssl.getValidTo().format(formatter) : "N/A", normalFont);
+                    addTableCell(sslTable, "Valid Until Scope", boldFont);
+                    addTableCell(sslTable, ssl.getValidTo() != null ? ssl.getValidTo().format(formatter) : "N/A", normalFont);
 
-                document.add(sslTable);
-            } else {
-                Paragraph noSsl = new Paragraph("Insecure connections. SSL/TLS certificate was not resolved. Plaintext communication is active.", normalFont);
-                noSsl.setSpacingAfter(20);
-                document.add(noSsl);
+                    document.add(sslTable);
+                } else {
+                    Paragraph noSsl = new Paragraph("Insecure connections. SSL/TLS certificate was not resolved. Plaintext communication is active.", normalFont);
+                    noSsl.setSpacingAfter(20);
+                    document.add(noSsl);
+                }
             }
 
             // Security headers section
-            Paragraph secHeaderH = new Paragraph("4. HTTP Security Headers Audit", sectionHeaderFont);
-            secHeaderH.setSpacingAfter(10);
-            document.add(secHeaderH);
+            if (!excludeHeaders) {
+                Paragraph secHeaderH = new Paragraph(sectionNum + ". HTTP Security Headers Audit", sectionHeaderFont);
+                secHeaderH.setSpacingAfter(10);
+                document.add(secHeaderH);
+                sectionNum++;
 
-            if (scan.getSecurityHeaders() != null && !scan.getSecurityHeaders().isEmpty()) {
-                PdfPTable headerTable = new PdfPTable(3);
-                headerTable.setWidthPercentage(100);
-                headerTable.setSpacingAfter(20);
-                headerTable.setWidths(new float[]{30, 20, 50});
+                if (scan.getSecurityHeaders() != null && !scan.getSecurityHeaders().isEmpty()) {
+                    PdfPTable headerTable = new PdfPTable(3);
+                    headerTable.setWidthPercentage(100);
+                    headerTable.setSpacingAfter(20);
+                    headerTable.setWidths(new float[]{30, 20, 50});
 
-                addTableHeaderCell(headerTable, "Security Header Key", boldFont);
-                addTableHeaderCell(headerTable, "Status", boldFont);
-                addTableHeaderCell(headerTable, "Rating", boldFont);
+                    addTableHeaderCell(headerTable, "Security Header Key", boldFont);
+                    addTableHeaderCell(headerTable, "Status", boldFont);
+                    addTableHeaderCell(headerTable, "Rating", boldFont);
 
-                for (SecurityHeader h : scan.getSecurityHeaders()) {
-                    addTableCell(headerTable, h.getHeaderName(), normalFont);
-                    addTableCell(headerTable, h.isPresent() ? "Present" : "Missing", normalFont);
-                    addTableCell(headerTable, h.getSecurityRating(), normalFont);
+                    for (SecurityHeader h : scan.getSecurityHeaders()) {
+                        addTableCell(headerTable, h.getHeaderName(), normalFont);
+                        addTableCell(headerTable, h.isPresent() ? "Present" : "Missing", normalFont);
+                        addTableCell(headerTable, h.getSecurityRating(), normalFont);
+                    }
+                    document.add(headerTable);
+                } else {
+                    Paragraph noHeaders = new Paragraph("No security header audits loaded.", normalFont);
+                    noHeaders.setSpacingAfter(20);
+                    document.add(noHeaders);
                 }
-                document.add(headerTable);
-            } else {
-                Paragraph noHeaders = new Paragraph("No security header audits loaded.", normalFont);
-                noHeaders.setSpacingAfter(20);
-                document.add(noHeaders);
             }
 
             // Cookie analysis section
-            Paragraph secHeaderC = new Paragraph("5. Transmitted Cookie Analysis", sectionHeaderFont);
-            secHeaderC.setSpacingAfter(10);
-            document.add(secHeaderC);
+            if (!excludeCookies) {
+                Paragraph secHeaderC = new Paragraph(sectionNum + ". Transmitted Cookie Analysis", sectionHeaderFont);
+                secHeaderC.setSpacingAfter(10);
+                document.add(secHeaderC);
+                sectionNum++;
 
-            if (scan.getCookieAnalyses() != null && !scan.getCookieAnalyses().isEmpty()) {
-                PdfPTable cookieTable = new PdfPTable(4);
-                cookieTable.setWidthPercentage(100);
-                cookieTable.setSpacingAfter(20);
-                cookieTable.setWidths(new float[]{40, 20, 20, 20});
+                if (scan.getCookieAnalyses() != null && !scan.getCookieAnalyses().isEmpty()) {
+                    PdfPTable cookieTable = new PdfPTable(4);
+                    cookieTable.setWidthPercentage(100);
+                    cookieTable.setSpacingAfter(20);
+                    cookieTable.setWidths(new float[]{40, 20, 20, 20});
 
-                addTableHeaderCell(cookieTable, "Cookie Key Name", boldFont);
-                addTableHeaderCell(cookieTable, "Secure Flag", boldFont);
-                addTableHeaderCell(cookieTable, "HttpOnly Flag", boldFont);
-                addTableHeaderCell(cookieTable, "SameSite Flag", boldFont);
+                    addTableHeaderCell(cookieTable, "Cookie Key Name", boldFont);
+                    addTableHeaderCell(cookieTable, "Secure Flag", boldFont);
+                    addTableHeaderCell(cookieTable, "HttpOnly Flag", boldFont);
+                    addTableHeaderCell(cookieTable, "SameSite Flag", boldFont);
 
-                for (CookieAnalysis c : scan.getCookieAnalyses()) {
-                    addTableCell(cookieTable, c.getCookieName(), normalFont);
-                    addTableCell(cookieTable, c.isSecure() ? "Yes" : "No", normalFont);
-                    addTableCell(cookieTable, c.isHttpOnly() ? "Yes" : "No", normalFont);
-                    addTableCell(cookieTable, c.getSameSite() != null ? c.getSameSite() : "None", normalFont);
+                    for (CookieAnalysis c : scan.getCookieAnalyses()) {
+                        addTableCell(cookieTable, c.getCookieName(), normalFont);
+                        addTableCell(cookieTable, c.isSecure() ? "Yes" : "No", normalFont);
+                        addTableCell(cookieTable, c.isHttpOnly() ? "Yes" : "No", normalFont);
+                        addTableCell(cookieTable, c.getSameSite() != null ? c.getSameSite() : "None", normalFont);
+                    }
+                    document.add(cookieTable);
+                } else {
+                    Paragraph noCookies = new Paragraph("No Set-Cookie parameters found in target HTTP response headers.", normalFont);
+                    noCookies.setSpacingAfter(20);
+                    document.add(noCookies);
                 }
-                document.add(cookieTable);
-            } else {
-                Paragraph noCookies = new Paragraph("No Set-Cookie parameters found in target HTTP response headers.", normalFont);
-                noCookies.setSpacingAfter(20);
-                document.add(noCookies);
             }
 
         } catch (Exception e) {

@@ -48,7 +48,8 @@ public class WebsiteScannerService {
         this.scanConfig = scanConfig;
     }
 
-    public ScanHistory runScan(ScanHistory scan) {
+    @org.springframework.scheduling.annotation.Async
+    public void runScan(ScanHistory scan) {
         String url = scan.getTargetUrl();
         log.info("Starting security scan for target: {}", url);
 
@@ -57,7 +58,8 @@ public class WebsiteScannerService {
             scan.setStatus("FAILED");
             scan.setScore(0);
             scan.setCompletedAt(LocalDateTime.now());
-            return scanHistoryRepository.save(scan);
+            scanHistoryRepository.save(scan);
+            return;
         }
 
         try {
@@ -93,7 +95,8 @@ public class WebsiteScannerService {
                 if (sslInfo != null) {
                     scan.setSslInfo(sslInfo);
                 }
-                return scanHistoryRepository.save(scan);
+                scanHistoryRepository.save(scan);
+                return;
             }
 
             // 3. Security Headers Analysis
@@ -120,14 +123,14 @@ public class WebsiteScannerService {
             scan.setCompletedAt(LocalDateTime.now());
 
             log.info("Successfully completed security scan for {}. Score: {}", url, score);
-            return scanHistoryRepository.save(scan);
+            scanHistoryRepository.save(scan);
 
         } catch (Exception e) {
             log.error("Unexpected error executing scan for {}: {}", url, e.getMessage(), e);
             scan.setStatus("FAILED");
             scan.setScore(0);
             scan.setCompletedAt(LocalDateTime.now());
-            return scanHistoryRepository.save(scan);
+            scanHistoryRepository.save(scan);
         }
     }
 }

@@ -68,13 +68,19 @@ public class ScanHistoryController {
     }
 
     @GetMapping("/{id}/export/pdf")
-    public void exportReportToPdf(@PathVariable Long id, HttpServletResponse response) throws IOException {
+    public void exportReportToPdf(
+            @PathVariable Long id,
+            @RequestParam(required = false, defaultValue = "false") boolean excludeRecommendations,
+            @RequestParam(required = false, defaultValue = "false") boolean excludeSsl,
+            @RequestParam(required = false, defaultValue = "false") boolean excludeHeaders,
+            @RequestParam(required = false, defaultValue = "false") boolean excludeCookies,
+            HttpServletResponse response) throws IOException {
         ScanHistory scan = scanHistoryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("Scan history record not found for ID: " + id));
 
         response.setContentType("application/pdf");
         response.setHeader("Content-Disposition", "attachment; filename=security-report-" + id + ".pdf");
 
-        pdfReportService.generateScanReport(scan, response.getOutputStream());
+        pdfReportService.generateScanReportCustom(scan, response.getOutputStream(), excludeRecommendations, excludeSsl, excludeHeaders, excludeCookies);
     }
 }
